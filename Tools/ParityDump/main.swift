@@ -14,9 +14,8 @@ import SmarticoPublicAPI
  * it, so it cannot rot unnoticed. It may use CryptoKit for the identify hash
  * because it is not the library.
  *
- * Output file names are the Kotlin tool's, on purpose: `<domain>.kotlin.json`
- * holds THIS SDK's transform output. `codegen/parity.ts` reads exactly those
- * names, so keeping them lets the diff script stay the Kotlin one unchanged.
+ * Output: `<domain>.raw.json` (the server reply), `<domain>.swift.json` (what this
+ * SDK's transform made of it) and `meta.json`, read by `codegen/parity.ts`.
  *
  * Run (from the repository root, credentials in the environment):
  *       swift run ParityDump --check     prints which credentials were picked up, no connection
@@ -39,7 +38,7 @@ private func defaultOutDir() -> URL {
         .appendingPathComponent("build/parity")
 }
 
-/** Print to stderr and exit non-zero — Kotlin's uncaught `error()` / timeout. */
+/** Print to stderr and exit non-zero. */
 private func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(1)
@@ -48,7 +47,7 @@ private func fail(_ message: String) -> Never {
 /**
  * A required setting, with a message that says exactly what to set.
  *
- * Environment only: the Kotlin tool also reads `local.properties` through
+ * Environment only:
  * Gradle, and SwiftPM has no counterpart to that file.
  */
 private func env(_ name: String) -> String {
@@ -82,7 +81,7 @@ private func identifyHash(_ user: String, _ salt: String) -> String {
 }
 
 /**
- * Kotlin's `withTimeout`: give up on the whole capture if `body` hangs.
+ * Give up on the whole capture if `body` hangs.
  * A watchdog rather than a task-group race, because the identify wait is a
  * plain continuation that cannot be cancelled — a timed-out capture is
  * useless anyway, so the process just ends.
@@ -96,7 +95,7 @@ private func withTimeout<T>(_ ms: Int, _ what: String, _ body: () async throws -
     return try await body()
 }
 
-/** Completed once by the `identify` listener (Kotlin: `CompletableDeferred`). */
+/** Completed once by the `identify` listener. */
 private final class Deferred<T>: @unchecked Sendable {
     private let lock = NSLock()
     private var value: T?
@@ -200,7 +199,7 @@ private func run(_ args: [String]) async throws {
         let raw = try await withTimeout(TIMEOUT_MS, "\(domain) raw") { try await Smartico.raw.request(cid: reqCid, expectCid: respCid, payload: payload) }
         let mine = try await withTimeout(TIMEOUT_MS, "\(domain) typed") { try await fetch() }
         try write("\(domain).raw.json", JSON.object(raw).jsonString())
-        try write("\(domain).kotlin.json", encoding: mine)
+        try write("\(domain).swift.json", encoding: mine)
         print("captured \(domain) (\(mine.count) item(s))")
     }
 
@@ -226,7 +225,7 @@ private func run(_ args: [String]) async throws {
     let clansRaw = try await withTimeout(TIMEOUT_MS, "clans raw") { try await Smartico.raw.request(cid: ClassId.GET_CLAN_LIST_REQUEST, expectCid: ClassId.GET_CLAN_LIST_RESPONSE) }
     let clansMine = try await withTimeout(TIMEOUT_MS, "clans typed") { try await Smartico.api.getClans() }
     try write("clans.raw.json", JSON.object(clansRaw).jsonString())
-    try write("clans.kotlin.json", encoding: clansMine)
+    try write("clans.swift.json", encoding: clansMine)
     print("captured clans (\(clansMine.clans?.count ?? 0) clan(s))")
 
     // Leaderboard takes request params, so it can't use the plain capture().
@@ -244,10 +243,10 @@ private func run(_ args: [String]) async throws {
     let lbMine = try await withTimeout(TIMEOUT_MS, "leaderboard typed") { try await Smartico.api.getLeaderBoard(periodType: LeaderBoardPeriodType.DAILY) }
     try write("leaderboard.raw.json", JSON.object(lbRaw).jsonString())
     if let lbMine = lbMine {
-        try write("leaderboard.kotlin.json", encoding: lbMine)
+        try write("leaderboard.swift.json", encoding: lbMine)
         print("captured leaderboard (\(lbMine.users?.count ?? 0) user(s))")
     } else {
-        try write("leaderboard.kotlin.json", "null")
+        try write("leaderboard.swift.json", "null")
         print("captured leaderboard (no board)")
     }
 
@@ -261,6 +260,5 @@ do {
 } catch {
     fail("parity capture failed: \(error)")
 }
-// The socket's URLSession keeps the process alive otherwise (Kotlin: OkHttp's
-// non-daemon threads, same `exitProcess(0)`).
+// The socket's URLSession keeps the process alive otherwise `).
 exit(0)

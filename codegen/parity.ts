@@ -5,9 +5,8 @@
  *
  * Answers "do all the fields match?" with evidence instead of eyeballing.
  *
- * The capture keeps the Kotlin tool's file names (`<domain>.raw.json`,
- * `<domain>.kotlin.json`, `meta.json`) so this script is the Kotlin one
- * unchanged; "kotlin" in its output means "this SDK".
+ * The capture is `<domain>.raw.json` + `<domain>.swift.json` + `meta.json`,
+ * written by `swift run ParityDump`.
  *
  * Usage (from the repo root, credentials in the environment):
  *        swift run ParityDump
@@ -24,7 +23,7 @@ const DIR = path.join(__dirname, '..', 'build', 'parity');
  * The capture records which environment it came from. Reading the image host
  * from there instead of hardcoding it means a dump taken against any label
  * diffs correctly — avatar transforms expand avatar_id against this domain, so
- * a wrong guess makes every row look like a Kotlin mismatch.
+ * a wrong guess makes every row look like a mismatch.
  */
 const META = path.join(DIR, 'meta.json');
 if (!fs.existsSync(META)) {
@@ -61,7 +60,7 @@ const DOMAINS: Record<string, (raw: any) => any> = {
     if (key === undefined) return null;
     const board = raw.map[key];
     // SmarticoAPI.leaderboardGet() expands avatar_id → avatar_url BEFORE the
-    // transform; do the same here or every row looks like a Kotlin extra.
+    // transform; do the same here or every row looks like an extra.
     const withAvatar = (p: any) => {
       if (p && p.avatar_id) p.avatar_url = (api as any).CoreUtils.avatarUrl(p.avatar_id, AVATAR_DOMAIN);
       return p;
@@ -82,7 +81,7 @@ function same(a: any, b: any): boolean {
     if (!Number.isNaN(na) && !Number.isNaN(nb)) return Math.abs(na - nb) < 1e-9;
   }
   if (typeof a === 'boolean' || typeof b === 'boolean') return Boolean(a) === Boolean(b);
-  // Deep, key-order-insensitive: Kotlin emits fields in declaration order,
+  // Deep, key-order-insensitive: the Swift encoder sorts keys,
   // JS in assignment order — comparing serialized text would flag everything.
   if (typeof a === 'object' && typeof b === 'object') {
     if (Array.isArray(a) !== Array.isArray(b)) return false;
@@ -96,7 +95,7 @@ function same(a: any, b: any): boolean {
   return String(a) === String(b);
 }
 
-type Diff = { key: string; js: any; kotlin: any; kind: 'missing' | 'extra' | 'value' };
+type Diff = { key: string; js: any; swift: any; kind: 'missing' | 'extra' | 'value' };
 
 /** Reports LEAF differences: nested objects/arrays are drilled into so the
  * output names the actual field (`prizes[].icon`), not just the container. */
@@ -108,7 +107,7 @@ function diffObject(js: any, kt: any, prefix = ''): Diff[] {
   // items reports once as `prizes[].icon`
   if (Array.isArray(js) && Array.isArray(kt)) {
     if (js.length !== kt.length) {
-      out.push({ key: prefix.replace(/\.$/, '') + ' (length)', js: js.length, kotlin: kt.length, kind: 'value' });
+      out.push({ key: prefix.replace(/\.$/, '') + ' (length)', js: js.length, swift: kt.length, kind: 'value' });
     }
     for (let i = 0; i < Math.min(js.length, kt.length); i++) {
       out.push(...diffObject(js[i], kt[i], prefix.replace(/\.$/, '') + '[].'));
@@ -127,9 +126,9 @@ function diffObject(js: any, kt: any, prefix = ''): Diff[] {
       continue;
     }
     // one side has data, the other doesn't → a dropped/extra field
-    if (!isEmpty(a) && isEmpty(b)) out.push({ key, js: a, kotlin: b, kind: 'missing' });
-    else if (isEmpty(a) && !isEmpty(b)) out.push({ key, js: a, kotlin: b, kind: 'extra' });
-    else out.push({ key, js: a, kotlin: b, kind: 'value' });
+    if (!isEmpty(a) && isEmpty(b)) out.push({ key, js: a, swift: b, kind: 'missing' });
+    else if (isEmpty(a) && !isEmpty(b)) out.push({ key, js: a, swift: b, kind: 'extra' });
+    else out.push({ key, js: a, swift: b, kind: 'value' });
   }
   return out;
 }
@@ -142,7 +141,7 @@ function short(v: any): string {
 let totalIssues = 0;
 for (const [domain, transform] of Object.entries(DOMAINS)) {
   const rawPath = path.join(DIR, `${domain}.raw.json`);
-  const ktPath = path.join(DIR, `${domain}.kotlin.json`);
+  const ktPath = path.join(DIR, `${domain}.swift.json`);
   if (!fs.existsSync(rawPath) || !fs.existsSync(ktPath)) {
     console.log(`— ${domain}: no capture (run 'swift run ParityDump' in the repo root first)`);
     continue;
@@ -161,7 +160,7 @@ for (const [domain, transform] of Object.entries(DOMAINS)) {
   const jsArr = Array.isArray(js) ? js : [js];
   const ktArr = Array.isArray(kt) ? kt : [kt];
   if (jsArr.length !== ktArr.length) {
-    console.log(`✗ ${domain}: item count differs — js ${jsArr.length}, kotlin ${ktArr.length}`);
+    console.log(`✗ ${domain}: item count differs — js ${jsArr.length}, swift ${ktArr.length}`);
     totalIssues++;
   }
 
@@ -182,10 +181,10 @@ for (const [domain, transform] of Object.entries(DOMAINS)) {
   }
   console.log(`✗ ${domain}: ${byKey.size} field(s) differ across ${n} item(s)`);
   for (const [key, info] of [...byKey.entries()].sort()) {
-    const tag = info.kind === 'missing' ? 'MISSING in kotlin' : info.kind === 'extra' ? 'extra in kotlin' : 'value differs';
+    const tag = info.kind === 'missing' ? 'MISSING in swift' : info.kind === 'extra' ? 'extra in swift' : 'value differs';
     console.log(`   ${key} — ${tag} (${info.count}×)`);
     console.log(`      js: ${short(info.sample.js)}`);
-    console.log(`      kt: ${short(info.sample.kotlin)}`);
+    console.log(`   swift: ${short(info.sample.swift)}`);
     totalIssues++;
   }
 }

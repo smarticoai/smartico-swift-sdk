@@ -81,11 +81,11 @@ let missions = try await Smartico.api.getMissions()
 There is no manual `identify()`. The SDK calls `getUser` on its own and sends
 IDENTIFY as soon as it has credentials.
 
-Four things read differently from the Kotlin SDK, because Swift forces them:
+Four things to know about the call shape:
 
 - The entry point is `Smartico.initialize(labelKey:options:)` — `init` is not a
   legal name for a static method.
-- API methods are `async throws` where Kotlin's are `suspend`. Failures are
+- API methods are `async throws`. Failures are
   `SmarticoError` cases: `.timeout(cid:)`, `.connectionClosed`,
   `.notInitialized`, `.http(_:)`, `.decoding(_:)`. Four cannot fail and say
   so: `getLeaderBoardSettings()` and `getUserLevelExtraCounters()` read session
@@ -103,9 +103,9 @@ configuration. See `Transport/Protocol.swift`.
 ## What's in the API
 
 63 of the 72 WSAPI methods, as `extension SmarticoApi` methods split across 16
-per-domain files (`Api/LevelsApi.swift`, `Api/MissionsApi.swift`, …) — the same
-files, method names, parameter names and defaults as the Kotlin SDK. The surface
-stays flat for callers:
+per-domain files (`Api/LevelsApi.swift`, `Api/MissionsApi.swift`, …), with the
+method names, parameter names and defaults of the JS SDK. The surface stays
+flat for callers:
 
 ```swift
 let tournaments = try await Smartico.api.getTournamentsList()
@@ -330,9 +330,6 @@ decide belongs in `codegen/mappings.ts`:
 - `INLINE_TYPES` — anonymous object literals worth a real struct.
 - `SKIP_DECLARATIONS` — web-embed plumbing that has no meaning here.
 
-These are the Kotlin generator's rules verbatim, with the type spellings
-translated, so both SDKs map the same declarations the same way.
-
 Check the method surface against WSAPI afterwards, still in `codegen/`:
 
 ```bash
@@ -385,8 +382,7 @@ runs it through both the reference implementation the types are generated from
 and ours, and diffs the results field by field.
 
 Because it talks to a live label, it needs credentials. They come from the
-environment only — the Kotlin tool also reads `local.properties`, a file
-SwiftPM has no counterpart to:
+environment:
 
 ```
 SMARTICO_LABEL_KEY   the label key
@@ -411,12 +407,10 @@ diffing half needs node.
 
 `ParityDump` captures 14 domains into `build/parity/` of the package, wherever
 it is run from — for each one the raw response (`<domain>.raw.json`) and what
-our transform made of it (`<domain>.kotlin.json`), plus a `meta.json` recording
+our transform made of it (`<domain>.swift.json`), plus a `meta.json` recording
 which environment the capture came from (avatar transforms expand `avatar_id`
-against that host, so the diff needs to know). The `.kotlin.json` name is the
-Kotlin tool's, kept so `codegen/parity.ts` is the same script for both SDKs;
-"kotlin" in its output means "this SDK". `npm run parity` then reports per
-field: `MISSING in kotlin`, `extra in kotlin`, or `value differs`.
+against that host, so the diff needs to know). `npm run parity` then reports per
+field: `MISSING in swift`, `extra in swift`, or `value differs`.
 
 The raw half is the reply to the same cid (and the same default payload) the
 typed getter sends; the other half is the getter's return value encoded with
@@ -434,8 +428,7 @@ requests a moment apart). Re-capture before concluding anything.
 
 The server speaks JSON numbers: the same field can arrive as `5`, `5.0` or
 `1.37861765E8`, and booleans sometimes ride as `0`/`1`/`"true"`. A synthesized
-`Decodable` throws on every one of those, and Swift has no file-wide switch like
-kotlinx's `@file:UseSerializers`. So every generated struct carries its own
+`Decodable` throws on every one of those. So every generated struct carries its own
 `init(from:)` that reads each field through the lenient helpers in
 `Serialization/Lenient.swift` (`lenientInt64`, `lenientDouble`, `lenientBool`,
 `lenientString`, …):
@@ -449,45 +442,3 @@ kotlinx's `@file:UseSerializers`. So every generated struct carries its own
 `encode(to:)` stays synthesized. Every generated field is optional, and the
 memberwise `init` defaults every argument to `nil`, for the same reason: a
 payload that omits a field must not fail to parse.
-
-## Differences from the Kotlin SDK
-
-The two SDKs share the protocol, the method surface and the generated types.
-Where they differ:
-
-- **`initialize`** — `Smartico.initialize(labelKey:options:)` instead of
-  `Smartico.init(…)`.
-- **Token-based `off`** — `on` returns a `SubscriptionToken`; `off(_ token:)`
-  takes it back. Kotlin's `off(event, cb)` matches the callback itself.
-- **Callbacks on main** — listener callbacks are delivered on the main queue,
-  in order. Kotlin runs them on the connection's loop thread.
-- **Errors** — `SmarticoError` cases instead of `SmarticoTimeoutException` /
-  `SmarticoClosedException`. `Smartico.api` before `initialize` is a
-  `fatalError`, where Kotlin's `error()` can be caught.
-- **`DpScreen` cases are lowercase** — `.missions`, `.tournaments`, …; the raw
-  values keep the Kotlin spelling (`"MISSIONS"`).
-- **Number-to-string text** — a number arriving for a `String` field becomes
-  its shortest text: `5.0` → `"5"`, `1.37861765E8` → `"137861765"`. kotlinx
-  keeps the literal as it was written.
-- **Leaderboard fallback** — when the reply has no board for the requested
-  period type, Swift takes the lowest key; Kotlin takes the first in wire
-  order. They agree whenever the server lists period types in ascending order.
-- **Request keys** — a note for operators reading server logs: the Swift SDK
-  sends the keys the JS SDK and `PROTOCOL.md` use, which in a few places differ
-  from what kotlin-public-api 0.1.0 sends:
-
-  | Request | Swift (and JS) | kotlin-public-api 0.1.0 |
-  |---|---|---|
-  | mission opt-in | `achievementId` | `ach_id` |
-  | tournament registration | `tournamentInstanceId` | `tournament_instance_id` |
-  | store purchase | `itemId` | `shop_item_id` |
-  | inbox mark all read / delete all | `all_read` / `all_deleted` | `all` |
-  | segment checks | `segment_id` | `segment_ids` |
-  | activity log | `startTimeSeconds` / `endTimeSeconds` | `start_time` / `end_time` |
-
-- `getActivityLog` fills `amount` from `points_collected` when the row carries
-  no `amount`, as the JS SDK does (`GetActivityLogResponse.ts`); kotlin-public-api
-  0.1.0 leaves `amount` empty on those rows.
-- `getRaffleDrawRunsHistory` carries `actual_execution_ts`, `ticket_start_ts`,
-  `is_winner` and `has_unclaimed_prize` like the JS `drawRunHistoryTransform`;
-  kotlin-public-api 0.1.0 drops them, so a "won by me" filter never matches there.
