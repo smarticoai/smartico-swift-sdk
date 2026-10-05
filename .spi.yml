@@ -1,0 +1,10 @@
+# Swift Package Index build configuration (swiftpackageindex.com).
+# The index builds the package on each listed platform for its compatibility
+# matrix, and hosts DocC documentation generated from the target below — the
+# doc comments on the generated types come from the public-api declarations.
+version: 1
+builder:
+  configs:
+    - platform: ios
+    - platform: macos-spm
+      documentation_targets: [SmarticoPublicAPI]
