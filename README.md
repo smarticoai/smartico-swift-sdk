@@ -442,3 +442,7 @@ The server speaks JSON numbers: the same field can arrive as `5`, `5.0` or
 `encode(to:)` stays synthesized. Every generated field is optional, and the
 memberwise `init` defaults every argument to `nil`, for the same reason: a
 payload that omits a field must not fail to parse.
+
+## License
+
+MIT — see `LICENSE`.
