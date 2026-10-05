@@ -1,0 +1,16 @@
+{
+  "name": "swift-public-api-codegen",
+  "private": true,
+  "description": "Generates Swift structs from @smartico/public-api type declarations.",
+  "scripts": {
+    "gen": "tsx generate.ts",
+    "parity": "tsx parity.ts",
+    "signatures": "tsx signatures.ts"
+  },
+  "devDependencies": {
+    "@smartico/public-api": "0.0.434",
+    "ts-morph": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
